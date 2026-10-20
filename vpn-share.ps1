@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Shares the Barracuda VPN of this client (Client 1) over an Ethernet cable with a second client (Client 2).
 
