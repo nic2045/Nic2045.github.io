@@ -1,2 +1,5 @@
+versions/1.1.0/vpn-share.ps1
+versions/1.1.0/vpn-share.ps1.sha256
 vpn-share.ps1
 vpn-share.ps1.sha256
+vpn-share.ps1.version
