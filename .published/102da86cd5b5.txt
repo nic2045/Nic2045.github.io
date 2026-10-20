@@ -1,1 +1,2 @@
 vpn-share.ps1
+vpn-share.ps1.sha256
