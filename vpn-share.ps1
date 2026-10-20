@@ -17,13 +17,16 @@
   Auto = full flow (default); Prep = policies only; Share = ICS only; Off = tear down.
 
 .PARAMETER VpnProfileName
-  Barracuda profile to connect (required: parameter or vpn-share.config.json).
+  Barracuda profile to connect. Empty = the profile whose description contains VpnProfilePattern is used.
+
+.PARAMETER VpnProfilePattern
+  Text searched in the profile description when no VpnProfileName is given (default '_Standard'). If several match, the first is used (warning).
 
 .PARAMETER VpnTestHost
-  Internal host that must be reachable through the VPN (DNS lookup, plus a TCP test if VpnTestPort is set). Define it in vpn-share.config.json. Empty = test skipped.
+  Internal host that must be reachable through the VPN (DNS lookup, plus a TCP test if VpnTestPort is set). Define it in vpn-share.config.json. Empty = a domain controller of the client's own domain is looked up via DNS SRV (fallback: %LOGONSERVER%); not domain-joined = test skipped.
 
 .PARAMETER VpnTestPort
-  Optional TCP port on VpnTestHost (e.g. 389) for a real reachability test through the tunnel.
+  Optional TCP port on VpnTestHost (e.g. 389) for a real reachability test through the tunnel. Default 389 when the domain controller was auto-detected.
 
 .PARAMETER VpnPattern
   Text in the description of the VPN adapter.
@@ -98,6 +101,7 @@ param(
   [string]$LanAdapter,
   [string]$VpnPattern = 'Barracuda Virtual Adapter',
   [string]$VpnProfileName,
+  [string]$VpnProfilePattern = '_Standard',
   [string]$VpnTestHost,
   [int]$VpnTestPort,
   [string]$InternetTestHost = 'www.msftconnecttest.com',
@@ -140,7 +144,7 @@ foreach ($dir in @($PSScriptRoot, 'C:\Tools\vpn-share')) {
 }
 if ($cfgFile) {
   $cfg = Get-Content -Path $cfgFile -Raw | ConvertFrom-Json
-  foreach ($name in 'VpnProfileName', 'VpnTestHost', 'VpnTestPort', 'VpnPattern', 'InternetTestHost') {
+  foreach ($name in 'VpnProfileName', 'VpnProfilePattern', 'VpnTestHost', 'VpnTestPort', 'VpnPattern', 'InternetTestHost') {
     if (-not $PSBoundParameters.ContainsKey($name) -and $cfg.$name) { Set-Variable -Name $name -Value ([string]$cfg.$name) }
   }
 }
@@ -250,6 +254,21 @@ function Test-TcpPort {
   }
   catch { return $false }
   finally { $client.Close() }
+}
+
+# Domain controller of the client's own domain, so no host has to be configured. Empty = not domain-joined / not resolvable.
+function Find-DomainController {
+  $domain = $env:USERDNSDOMAIN
+  if ($domain) {
+    try {
+      $srv = Resolve-DnsName "_ldap._tcp.dc._msdcs.$domain" -Type SRV -ErrorAction Stop |
+        Where-Object { $_.Type -eq 'SRV' } | Sort-Object Priority, @{ Expression = 'Weight'; Descending = $true } | Select-Object -First 1
+      if ($srv) { return [string]$srv.NameTarget }
+    }
+    catch { Write-Verbose "SRV-Lookup für $domain fehlgeschlagen: $($_.Exception.Message)" }
+  }
+  if ($env:LOGONSERVER) { return ($env:LOGONSERVER -replace '^\\\\', '') }
+  ''
 }
 
 function Get-CurrentSsid {
@@ -409,6 +428,16 @@ function Get-LanState {
   [pscustomobject]@{ Adapter = $null; Problem = 'Kein Link am Ethernet-Adapter: Kabel gesteckt, Client 2 eingeschaltet?' }
 }
 
+# Profiles to use: the named one, else the one(s) whose description contains VpnProfilePattern (default '_Standard').
+function Find-VpnProfile {
+  if ($VpnProfileName) { return @(Get-BarracudaProfile $VpnProfileName) }
+  @(Get-BarracudaProfile | Where-Object { $_.Description -like "*$VpnProfilePattern*" })
+}
+
+function Get-VpnProfileLabel {
+  if ($VpnProfileName) { "'$VpnProfileName'" } else { "mit '$VpnProfilePattern'" }
+}
+
 # Plugging the cable or connecting the VPN can drop the WLAN; reconnect it.
 function Restore-Wlan {
   if ($Demo) { return }
@@ -455,13 +484,12 @@ function Connect-BarracudaVpn {
   if ($Demo) { Write-Log "[DEMO] würde VPN-Profil '$VpnProfileName' verbinden"; return }
   Import-BarracudaModule
   if ((Test-BarracudaConnected) -and (Find-VpnAdapter)) { Write-Log 'VPN ist bereits verbunden'; return }
-  if (-not $VpnProfileName) { throw 'Profilname fehlt: -VpnProfileName oder vpn-share.config.json' }
 
-  $profiles = @(Get-BarracudaProfile $VpnProfileName)
+  $profiles = @(Find-VpnProfile)
   if ($profiles.Count -eq 0) {
-    throw "VPN-Profil '$VpnProfileName' nicht gefunden. Vorhanden: $((@(Get-BarracudaProfile).Description) -join ', ')"
+    throw "VPN-Profil $(Get-VpnProfileLabel) nicht gefunden. Vorhanden: $((@(Get-BarracudaProfile).Description) -join ', ')"
   }
-  if ($profiles.Count -gt 1) { Write-Log "WARNUNG: $($profiles.Count) Profile namens '$VpnProfileName', nehme das erste" }
+  if ($profiles.Count -gt 1) { Write-Log "WARNUNG: $($profiles.Count) Profile passen auf $(Get-VpnProfileLabel), nehme das erste ($($profiles[0].Description))" }
   $vpnProfile = $profiles[0]
   if ($DryRun) {
     Write-Log "[DRYRUN] Profil gefunden: '$($vpnProfile.Description)'. Würde das VPN verbinden"
@@ -622,9 +650,8 @@ function Get-Prerequisite {
     @{ Kind = 'hard'; Name = 'WLAN-Adapter vorhanden'; Check = { $a = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.PhysicalMediaType -match '802\.11' }); if ($a.Count -eq 0) { 'kein WLAN-Adapter gefunden' } elseif (-not ($a | Where-Object { $_.Status -ne 'Disabled' })) { "'$($a[0].Name)' ist deaktiviert" } else { '' } } }
     @{ Kind = 'hard'; Name = 'Ethernet-Adapter vorhanden'; Check = { $a = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.PhysicalMediaType -notmatch '802\.11|Bluetooth' -and $_.InterfaceDescription -notmatch $VpnPattern }); if ($a.Count -eq 0) { 'kein Ethernet-Adapter gefunden (USB-Adapter gesteckt?)' } elseif (-not ($a | Where-Object { $_.Status -ne 'Disabled' })) { "'$($a[0].Name)' ist deaktiviert" } else { '' } } }
     @{ Kind = 'hard'; Name = 'Barracuda-VPN-Adapter vorhanden'; Check = { if (@(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -match $VpnPattern }).Count -gt 0) { '' } else { "kein Adapter '$VpnPattern' (Barracuda-Client installiert?)" } } }
-    @{ Kind = 'hard'; Name = "Barracuda-Profil '$VpnProfileName' vorhanden"; Check = {
-        if (-not $VpnProfileName) { return 'Profilname fehlt: -VpnProfileName oder vpn-share.config.json' }
-        try { Import-BarracudaModule; if (@(Get-BarracudaProfile $VpnProfileName).Count -gt 0) { '' } else { 'Profil nicht gefunden' } }
+    @{ Kind = 'hard'; Name = 'Barracuda-VPN-Profil vorhanden'; Check = {
+        try { Import-BarracudaModule; if (@(Find-VpnProfile).Count -gt 0) { '' } else { "Profil $(Get-VpnProfileLabel) nicht gefunden" } }
         catch { $_.Exception.Message }
       }
     }
@@ -642,7 +669,7 @@ function Get-Prerequisite {
       }
     }
     @{ Kind = 'soft'; Name = 'Script liegt nicht lokal'; Check = { if ($PSScriptRoot -match '^\\\\|OneDrive|Downloads') { 'besser unter C:\Tools\vpn-share\ ablegen' } else { '' } } }
-    @{ Kind = 'soft'; Name = 'VPN-Testziel nicht konfiguriert'; Check = { if ($VpnTestHost) { '' } else { 'VpnTestHost in vpn-share.config.json setzen' } } }
+    @{ Kind = 'soft'; Name = 'VPN-Testziel nicht konfiguriert'; Check = { if ($VpnTestHost -or $env:USERDNSDOMAIN -or $env:LOGONSERVER) { '' } else { 'kein Domänen-Client: VpnTestHost in vpn-share.config.json setzen' } } }
     @{ Kind = 'soft'; Name = 'Frühere Änderungen noch aktiv'; Check = { if (Test-Path $StateFile) { 'bitte -Step Off ausführen' } else { '' } } }
     @{ Kind = 'soft'; Name = 'Achtung: VPN auf Client 1 aktiv'; Check = { if ((Test-BarracudaConnected) -or (Find-VpnAdapter)) { 'wird nach dem Start getrennt' } else { '' } } }
   )
@@ -740,9 +767,9 @@ function Show-Diagnostic {
   Write-Log "ICS aktiv auf: $((@(Get-IcsEnabledName)) -join ', ')"
   try {
     Import-BarracudaModule
-    $found = @(Get-BarracudaProfile $VpnProfileName)
-    if ($found.Count -eq 0) { Write-Log "Barracuda-Profil '$VpnProfileName': NICHT gefunden. Vorhanden: $((@(Get-BarracudaProfile).Description) -join ', ')" }
-    else { Write-Log "Barracuda-Profil '$VpnProfileName': gefunden (ID=$($found[0].ID), Context=$($found[0].Context), Anzahl=$($found.Count))" }
+    $found = @(Find-VpnProfile)
+    if ($found.Count -eq 0) { Write-Log "Barracuda-Profil $(Get-VpnProfileLabel): NICHT gefunden. Vorhanden: $((@(Get-BarracudaProfile).Description) -join ', ')" }
+    else { Write-Log "Barracuda-Profil $(Get-VpnProfileLabel): gefunden (ID=$($found[0].ID), Context=$($found[0].Context), Anzahl=$($found.Count))" }
     Write-Log "Barracuda Verbindungsstatus: $(Get-VpnState)"
   }
   catch { Write-Log "Barracuda: PROBLEM: $($_.Exception.Message)" }
@@ -794,6 +821,14 @@ function Invoke-AutoRun {
   Invoke-Gate -Title 'Barracuda meldet: VPN verbunden' -TimeoutSec 120 -AfterChange `
     -Hint 'Prüft den Verbindungsstatus des Barracuda-Clients' `
     -Check { if (Test-BarracudaConnected) { '' } else { "Status: $(Get-VpnState)" } }
+  if (-not $VpnTestHost) {
+    $dc = Find-DomainController
+    if ($dc) {
+      $script:VpnTestHost = $dc
+      if (-not $VpnTestPort) { $script:VpnTestPort = 389 }
+      Write-Log "VPN-Testziel automatisch ermittelt (Domain Controller): ${VpnTestHost}:$VpnTestPort"
+    }
+  }
   if ($VpnTestHost) {
     Invoke-Gate -Title "VPN-Testziel auflösbar ($VpnTestHost)" -AllowSkip -AfterChange `
       -Hint 'Prüft, ob das VPN auf Client 1 wirklich funktioniert' `
