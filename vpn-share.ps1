@@ -82,9 +82,13 @@
   BIOS (once): disable "Wireless Radio Control" -> "Control WLAN radio", or the WLAN drops when the cable is plugged in.
   When started from memory, log and state file are written to %TEMP%.
 
-  Version: v1.0.0 (build 261020.2229)
+  Version: v1.1.0 (build 261020.2352)
 
   Changelog
+    1.1.0 (2026-10-20)
+      - Test target is optional: a domain controller of the client's own domain is found via DNS SRV (fallback %LOGONSERVER%), TCP port 389
+      - Profile is optional: the Barracuda profile whose description contains VpnProfilePattern (default '_Standard') is used
+      - Runs without arguments or config on a domain client: irm <url> | iex
     1.0.0 (2026-10-20)
       - Prerequisite panel (admin, adapters enabled, Barracuda profile, WLAN internet, cable) before anything changes
       - Automatic VPN disconnect with 3-2-1 countdown; VPN verified via Barracuda status and an optional test target
