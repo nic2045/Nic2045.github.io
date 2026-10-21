@@ -82,9 +82,11 @@
   BIOS (once): disable "Wireless Radio Control" -> "Control WLAN radio", or the WLAN drops when the cable is plugged in.
   When started from memory, log and state file are written to %TEMP%.
 
-  Version: 1.2.0   (x-release-please-version)
+  Version: 1.2.1   (x-release-please-version)
 
   Changelog
+    1.2.1 (2026-10-21)
+      - Start header is centered, shown as a three-row bar and titled "VPN Sharing - Laptop 2 Laptop"
     1.2.0 (2026-10-21)
       - Prerequisite panel always shows whether the VPN connection of Client 1 is ON or OFF (yellow when it is on and will be disconnected)
       - Start header with the script name and, smaller below it, the version (also written to the log), so a debug report names the version in use
@@ -169,7 +171,7 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
 #endregion
 
 #region Configuration
-$script:ScriptVersion = '1.2.0'   # x-release-please-version (shown in the start header and the log)
+$script:ScriptVersion = '1.2.1'   # x-release-please-version (shown in the start header and the log)
 $cfgFile = $null
 foreach ($dir in @($PSScriptRoot, 'C:\Tools\vpn-share')) {
   if ($dir -and -not $cfgFile -and (Test-Path (Join-Path $dir 'vpn-share.config.json'))) {
@@ -238,9 +240,13 @@ function Write-PanelBorder {
 # Start header: script name as a bar, the version smaller below it (also in the log, so a debug log names the version).
 function Write-ScriptHeader {
   $mode = @(if ($Demo) { 'Demo' } if ($DryRun) { 'DryRun' } if ($DebugInfo) { 'Debug' }) -join ', '
+  $width = 76   # same width as the panels and the question bars
+  $center = { param([string]$Text) (' ' * [Math]::Max(0, [int][Math]::Floor(($width - $Text.Length) / 2)) + $Text).PadRight($width) }
   Write-Ui ''
-  Write-Ui (' vpn-share').PadRight(76) 'White' -Background 'DarkBlue'
-  Write-Ui ("   Version $($script:ScriptVersion)   (Step $Step" + $(if ($mode) { ", $mode" } else { '' }) + ')') 'DarkGray'
+  Write-Ui (' ' * $width) 'White' -Background 'DarkBlue'   # three-row bar: the title stands out like a banner
+  Write-Ui (& $center 'VPN Sharing - Laptop 2 Laptop') 'White' -Background 'DarkBlue'
+  Write-Ui (' ' * $width) 'White' -Background 'DarkBlue'
+  Write-Ui (& $center ("Version $($script:ScriptVersion)   (Step $Step" + $(if ($mode) { ", $mode" } else { '' }) + ')')) 'DarkGray'
   Write-Ui ''
   try { Add-Content -Path $LogFile -Value ('{0:yyyy-MM-dd HH:mm:ss}  vpn-share Version {1}, Step {2}, PowerShell {3}' -f (Get-Date), $script:ScriptVersion, $Step, $PSVersionTable.PSVersion) -Encoding UTF8 } catch { $null = $_ }
 }
