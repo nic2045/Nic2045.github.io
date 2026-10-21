@@ -14,18 +14,23 @@
 .EXAMPLE
     .\Repair-SCCMClient.ps1 -WhatIf
 .EXAMPLE
+    irm https://<user>.github.io/repair-sccmclient/Repair-SCCMClient.ps1 | iex
+.EXAMPLE
     .\Repair-SCCMClient.ps1 -Step Policy, Validate
 .NOTES
     Author: Nico Dubiellak   (publish-scan: ignore)
-    Exit codes: 0 = ok, 1 = at least one step failed, 2 = client not installed
+    Exit codes: 0 = ok, 1 = at least one step failed, 2 = client not installed, 3 = not elevated
+    (exit codes apply when started as a file; with irm | iex the console stays open)
     Inspired by the repair steps listed in https://github.com/bijudevops/SCCMagentRepair
     (own implementation, no code taken from it).
 
-    Version: 1.1.0   (x-release-please-version)
+    Version: 1.1.1   (x-release-please-version)
 
     Changelog
-      1.0.0
-        - First version
+      1.1.1
+        - Runs with irm | iex: no use of $PSCmdlet, no exit that closes the console, own elevation check
+      1.1.0
+        - First published version
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -36,6 +41,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# #Requires is not enforced when the text is started with irm | iex, so check here as well
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Warning 'Run this script in an elevated PowerShell (Run as administrator).'
+    if ($PSCommandPath) { exit 3 } else { return }
+}
 $CcmDir = Join-Path $env:WinDir 'CCM'
 $script:Failed = $false
 
@@ -53,7 +65,7 @@ function Invoke-Step {
     param([string]$Name, [scriptblock]$Action)
     if ($Step -notcontains $Name) { return }
     Write-Log "Step $Name"
-    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, $Name)) { return }
+    if ($WhatIfPreference) { Write-Log "WhatIf: step $Name skipped"; return }
     try { & $Action }
     catch { $script:Failed = $true; Write-Log "$Name failed: $($_.Exception.Message)" 'ERROR' }
 }
@@ -70,7 +82,7 @@ function Start-CcmExec {
 
 if (-not ((Test-Path (Join-Path $CcmDir 'CcmExec.exe')) -or (Get-Service -Name CcmExec -ErrorAction SilentlyContinue))) {
     Write-Log 'ConfigMgr client is not installed.' 'ERROR'
-    exit 2
+    if ($PSCommandPath) { exit 2 } else { return }
 }
 
 Invoke-Step 'CcmRepair' {
@@ -127,5 +139,6 @@ Invoke-Step 'Validate' {
 }
 
 Write-Log "Done. Log: $LogFile"
-if ($script:Failed) { exit 1 }
-exit 0
+# exit would close the console when started with irm | iex (no script file)
+$code = if ($script:Failed) { 1 } else { 0 }
+if ($PSCommandPath) { exit $code }
