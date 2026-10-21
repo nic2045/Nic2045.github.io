@@ -1,0 +1,13 @@
+{
+  "version": "3.0.0",
+  "resources": [
+    {
+      "@id": "https://nic2045.github.io/psfeed/registration/",
+      "@type": "RegistrationsBaseUrl/3.6.0"
+    },
+    {
+      "@id": "https://nic2045.github.io/psfeed/flat/",
+      "@type": "PackageBaseAddress/3.0.0"
+    }
+  ]
+}

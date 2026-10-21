@@ -82,9 +82,13 @@
   BIOS (once): disable "Wireless Radio Control" -> "Control WLAN radio", or the WLAN drops when the cable is plugged in.
   When started from memory, log and state file are written to %TEMP%.
 
-  Version: v1.1.0 (build 261020.2352)
+  Version: 1.1.1   (x-release-please-version)
 
   Changelog
+    1.1.1 (2026-10-20)
+      - Prerequisite panel shows whether the AD/Netlogon server was found from a variable (LOGONSERVER, USERDNSDOMAIN or the configured test host) and which value
+      - Windows PowerShell 5.1: umlauts garbled by a charset-less `irm` response are repaired when the script runs as a scriptblock, otherwise a warning names the fix
+      - PowerShell 7 relaunch: the temporary copy is written with a BOM, so Windows PowerShell 5.1 reads the umlauts correctly
     1.1.0 (2026-10-20)
       - Test target is optional: a domain controller of the client's own domain is found via DNS SRV (fallback %LOGONSERVER%), TCP port 389
       - Profile is optional: the Barracuda profile whose description contains VpnProfilePattern (default '_Standard') is used
@@ -119,6 +123,25 @@ param(
 $ErrorActionPreference = 'Stop'   # any error aborts and lands in the catch at the bottom
 if ($DemoFail) { $Demo = [switch]$true }   # -DemoFail alone must never run for real
 
+#region Encoding self-check
+# Windows PowerShell 5.1 decodes an `irm` response without a charset as ISO-8859-1, so the UTF-8 umlauts arrive as
+# mojibake ('ü' becomes 'Ã¼'). Detect that and run the script again with the text re-decoded as UTF-8.
+if ('ü'.Length -ne 1 -and -not $env:VPNSHARE_ENCODING_FIX) {
+  $selfBlock = $MyInvocation.MyCommand.ScriptBlock
+  # only for in-memory scriptblocks that are really this script (with `iex` the block would be the caller's)
+  if (-not $PSCommandPath -and $selfBlock -and $selfBlock.ToString().Contains('#region Encoding self-check')) {
+    $env:VPNSHARE_ENCODING_FIX = '1'
+    try {
+      $fixedText = [Text.Encoding]::UTF8.GetString([Text.Encoding]::GetEncoding(28591).GetBytes($selfBlock.ToString()))
+      & ([scriptblock]::Create($fixedText)) @PSBoundParameters
+    }
+    finally { Remove-Item Env:\VPNSHARE_ENCODING_FIX -ErrorAction SilentlyContinue }
+    return
+  }
+  Write-Warning 'Umlaute werden falsch gelesen (UTF-8 ohne BOM unter Windows PowerShell 5.1). Skript mit UTF-8-Dekodierung starten (Oneliner in Build/PUBLISH.md) oder die Datei mit BOM speichern.'
+}
+#endregion
+
 #region Windows PowerShell 5.1 relaunch
 # The Barracuda module is built for .NET Framework and does not load in PowerShell 7.
 if ($PSVersionTable.PSEdition -eq 'Core') {
@@ -126,7 +149,7 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
   $self = $PSCommandPath
   if (-not $self) {   # started from memory (Gist/scriptblock): write the script to a file first
     $self = Join-Path $env:TEMP 'vpn-share.ps1'
-    Set-Content -Path $self -Value $MyInvocation.MyCommand.ScriptBlock.ToString() -Encoding UTF8
+    [IO.File]::WriteAllText($self, $MyInvocation.MyCommand.ScriptBlock.ToString(), (New-Object Text.UTF8Encoding $true))   # with BOM: PowerShell 7 writes UTF-8 without one, 5.1 would then misread the umlauts
   }
   $relaunch = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $self)
   foreach ($key in $PSBoundParameters.Keys) {
@@ -272,6 +295,15 @@ function Find-DomainController {
     catch { Write-Verbose "SRV-Lookup für $domain fehlgeschlagen: $($_.Exception.Message)" }
   }
   if ($env:LOGONSERVER) { return ($env:LOGONSERVER -replace '^\\\\', '') }
+  ''
+}
+
+# Where the AD/Netlogon server comes from: configured test host, %LOGONSERVER% or the DNS domain (DC is looked up after the VPN connect). Empty = not found.
+function Get-AdServerSource {
+  if ($VpnTestHost) { return "konfiguriert: $VpnTestHost" }
+  $domain = if ($env:USERDNSDOMAIN) { ", Domäne $($env:USERDNSDOMAIN)" } else { '' }
+  if ($env:LOGONSERVER) { return "LOGONSERVER=$($env:LOGONSERVER -replace '^\\\\', '')$domain" }
+  if ($env:USERDNSDOMAIN) { return "Domäne $($env:USERDNSDOMAIN), DC per DNS nach dem VPN-Connect" }
   ''
 }
 
@@ -673,7 +705,7 @@ function Get-Prerequisite {
       }
     }
     @{ Kind = 'soft'; Name = 'Script liegt nicht lokal'; Check = { if ($PSScriptRoot -match '^\\\\|OneDrive|Downloads') { 'besser unter C:\Tools\vpn-share\ ablegen' } else { '' } } }
-    @{ Kind = 'soft'; Name = 'VPN-Testziel nicht konfiguriert'; Check = { if ($VpnTestHost -or $env:USERDNSDOMAIN -or $env:LOGONSERVER) { '' } else { 'kein Domänen-Client: VpnTestHost in vpn-share.config.json setzen' } } }
+    @{ Kind = 'info'; Name = 'AD/Netlogon-Server aus Variable gefunden'; Check = { if (Get-AdServerSource) { '' } else { 'weder LOGONSERVER noch USERDNSDOMAIN gesetzt (kein Domänen-Client?), VpnTestHost in vpn-share.config.json setzen' } }; Detail = { Get-AdServerSource } }
     @{ Kind = 'soft'; Name = 'Frühere Änderungen noch aktiv'; Check = { if (Test-Path $StateFile) { 'bitte -Step Off ausführen' } else { '' } } }
     @{ Kind = 'soft'; Name = 'Achtung: VPN auf Client 1 aktiv'; Check = { if ((Test-BarracudaConnected) -or (Find-VpnAdapter)) { 'wird nach dem Start getrennt' } else { '' } } }
   )
@@ -691,12 +723,16 @@ function Show-PrerequisitePanel {
       if ($DemoFail -and $script:DemoPanelRuns -eq 1 -and $item.Name -eq 'WLAN hat Internet') { $problem = 'kein Internet (Anmeldeseite?)' }
     }
     else { $problem = try { [string](& $item.Check) } catch { $_.Exception.Message } }
-    [pscustomobject]@{ Kind = $item.Kind; Name = $item.Name; Problem = $problem }
+    $detail = ''
+    if (-not $problem -and $item.Detail) { $detail = if ($Demo) { 'LOGONSERVER=DC01, Domäne contoso.com (Demo)' } else { try { [string](& $item.Detail) } catch { '' } } }
+    [pscustomobject]@{ Kind = $item.Kind; Name = $item.Name; Problem = $problem; Detail = $detail }
   }
   Write-PanelBorder 'top' 'Voraussetzungen Client 1'
   foreach ($result in $results) {
-    if (-not $result.Problem) { if ($result.Kind -eq 'hard') { Write-PanelLine "[$okMark] $($result.Name)" 'DarkGreen' } }   # soft checks only show when they warn
-    elseif ($result.Kind -eq 'soft') { Write-PanelLine "[!] $($result.Name) - $($result.Problem)" 'Yellow' }
+    if (-not $result.Problem) {   # soft checks only show when they warn, hard and info checks always
+      if ($result.Kind -in 'hard', 'info') { Write-PanelLine ("[$okMark] $($result.Name)" + $(if ($result.Detail) { " ($($result.Detail))" } else { '' })) 'DarkGreen' }
+    }
+    elseif ($result.Kind -in 'soft', 'info') { Write-PanelLine "[!] $($result.Name) - $($result.Problem)" 'Yellow' }
     else { Write-PanelLine "[$failMark] $($result.Name) - $($result.Problem)" 'Red' }
     if ($result.Problem) { try { Add-Content -Path $LogFile -Value ('{0:yyyy-MM-dd HH:mm:ss}  PRÜFUNG {1}: {2}' -f (Get-Date), $result.Name, $result.Problem) -Encoding UTF8 } catch { $null = $_ } }
   }
