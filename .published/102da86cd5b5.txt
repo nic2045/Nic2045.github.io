@@ -7,6 +7,8 @@ repair-sccmclient/versions/1.1.0/Repair-SCCMClient.ps1
 repair-sccmclient/versions/1.1.0/Repair-SCCMClient.ps1.sha256
 repair-sccmclient/versions/1.1.1/Repair-SCCMClient.ps1
 repair-sccmclient/versions/1.1.1/Repair-SCCMClient.ps1.sha256
+repair-sccmclient/versions/1.1.2/Repair-SCCMClient.ps1
+repair-sccmclient/versions/1.1.2/Repair-SCCMClient.ps1.sha256
 vpn-share/versions/1.1.0/vpn-share.ps1
 vpn-share/versions/1.1.0/vpn-share.ps1.sha256
 vpn-share/versions/1.1.1/vpn-share.ps1

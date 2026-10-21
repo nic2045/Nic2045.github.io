@@ -24,9 +24,12 @@
     Inspired by the repair steps listed in https://github.com/bijudevops/SCCMagentRepair
     (own implementation, no code taken from it).
 
-    Version: 1.1.1   (x-release-please-version)
+    Version: 1.1.2   (x-release-please-version)
 
     Changelog
+      1.1.2
+        - Log file is written without Add-Content (it failed with "stream was not readable" after CcmRepair); a logging problem no longer stops a step
+        - Falls back to the temp folder when the log folder is not writable
       1.1.1
         - Runs with irm | iex: no use of $PSCmdlet, no exit that closes the console, own elevation check
       1.1.0
@@ -51,14 +54,31 @@ if (-not $isAdmin) {
 $CcmDir = Join-Path $env:WinDir 'CCM'
 $script:Failed = $false
 
-if (-not (Test-Path $LogPath)) { $null = New-Item -ItemType Directory -Path $LogPath -Force }
+try { if (-not (Test-Path $LogPath)) { $null = New-Item -ItemType Directory -Path $LogPath -Force } }
+catch { $LogPath = $env:TEMP }
 $LogFile = Join-Path $LogPath ('repair-sccmclient.{0:yyyyMMdd-HHmmss}.log' -f (Get-Date))
 
 function Write-Log {
     param([string]$Message, [ValidateSet('INFO', 'WARN', 'ERROR')][string]$Level = 'INFO')
     $line = '{0:yyyy-MM-dd HH:mm:ss} [{1}] {2}' -f (Get-Date), $Level, $Message
     Write-Host $line
-    Add-Content -Path $LogFile -Value $line
+    # Add-Content opens the file for reading too and fails while a scanner or another process holds it;
+    # append without reading, retry, and never let a logging problem stop a repair step
+    for ($try = 1; $try -le 3; $try++) {
+        try {
+            [IO.File]::AppendAllText($LogFile, $line + [Environment]::NewLine, (New-Object Text.UTF8Encoding($true)))
+            return
+        }
+        catch { Start-Sleep -Milliseconds 300 }
+    }
+    # the log folder is not writable (for example blocked by a security product): fall back to the temp folder once
+    $fallback = Join-Path $env:TEMP (Split-Path -Leaf $LogFile)
+    if ($LogFile -ne $fallback) {
+        $script:LogFile = $fallback
+        Write-Warning "Cannot write the log to $LogPath, using $fallback instead."
+        try { [IO.File]::AppendAllText($script:LogFile, $line + [Environment]::NewLine, (New-Object Text.UTF8Encoding($true))); return } catch { $null = $_ }
+    }
+    if (-not $script:LogWarned) { $script:LogWarned = $true; Write-Warning "Cannot write the log file $LogFile, continuing without it." }
 }
 
 function Invoke-Step {
