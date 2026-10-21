@@ -1,0 +1,35 @@
+{
+  "count": 1,
+  "items": [
+    {
+      "@id": "https://nic2045.github.io/psfeed/registration/repair-sccmclient/index.json#page",
+      "count": 1,
+      "lower": "1.0.0",
+      "upper": "1.0.0",
+      "items": [
+        {
+          "@id": "https://nic2045.github.io/psfeed/registration/repair-sccmclient/1.0.0.json",
+          "catalogEntry": {
+            "@id": "https://nic2045.github.io/psfeed/registration/repair-sccmclient/1.0.0.json",
+            "id": "Repair-SCCMClient",
+            "version": "1.0.0",
+            "authors": "nic2045",
+            "description": "Runs the selected repair steps one after another and writes a log file.\n    Runs without NDTools and needs no network access.\n    Steps: CcmRepair, Policy, Registration, Wmi, Cache, Validate.",
+            "tags": [
+              "PSScript",
+              "network",
+              "vpn"
+            ],
+            "copyright": "",
+            "projectUrl": "",
+            "releaseNotes": "",
+            "isPrerelease": false,
+            "listed": true,
+            "packageContent": "https://nic2045.github.io/psfeed/flat/repair-sccmclient/1.0.0/repair-sccmclient.1.0.0.nupkg"
+          },
+          "packageContent": "https://nic2045.github.io/psfeed/flat/repair-sccmclient/1.0.0/repair-sccmclient.1.0.0.nupkg"
+        }
+      ]
+    }
+  ]
+}
