@@ -82,9 +82,12 @@
   BIOS (once): disable "Wireless Radio Control" -> "Control WLAN radio", or the WLAN drops when the cable is plugged in.
   When started from memory, log and state file are written to %TEMP%.
 
-  Version: 1.1.2   (x-release-please-version)
+  Version: 1.2.0   (x-release-please-version)
 
   Changelog
+    1.2.0 (2026-10-21)
+      - Prerequisite panel always shows whether the VPN connection of Client 1 is ON or OFF (yellow when it is on and will be disconnected)
+      - Start header with the script name and, smaller below it, the version (also written to the log), so a debug report names the version in use
     1.1.2 (2026-10-21)
       - Help text no longer names the VPN product
       - Script text is ASCII only (umlauts replaced by other words), so `irm | iex` shows no garbled characters in Windows PowerShell 5.1
@@ -166,6 +169,7 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
 #endregion
 
 #region Configuration
+$script:ScriptVersion = '1.2.0'   # x-release-please-version (shown in the start header and the log)
 $cfgFile = $null
 foreach ($dir in @($PSScriptRoot, 'C:\Tools\vpn-share')) {
   if ($dir -and -not $cfgFile -and (Test-Path (Join-Path $dir 'vpn-share.config.json'))) {
@@ -229,6 +233,16 @@ function Write-PanelBorder {
   $right = [string][char]$(switch ($Kind) { 'top' { 0x2510 } 'mid' { 0x2524 } default { 0x2518 } })
   $inner = if ($Title) { "$h $Title " } else { '' }
   Write-Ui ($left + $inner + ($h * (74 - $inner.Length)) + $right) 'Gray'
+}
+
+# Start header: script name as a bar, the version smaller below it (also in the log, so a debug log names the version).
+function Write-ScriptHeader {
+  $mode = @(if ($Demo) { 'Demo' } if ($DryRun) { 'DryRun' } if ($DebugInfo) { 'Debug' }) -join ', '
+  Write-Ui ''
+  Write-Ui (' vpn-share').PadRight(76) 'White' -Background 'DarkBlue'
+  Write-Ui ("   Version $($script:ScriptVersion)   (Step $Step" + $(if ($mode) { ", $mode" } else { '' }) + ')') 'DarkGray'
+  Write-Ui ''
+  try { Add-Content -Path $LogFile -Value ('{0:yyyy-MM-dd HH:mm:ss}  vpn-share Version {1}, Step {2}, PowerShell {3}' -f (Get-Date), $script:ScriptVersion, $Step, $PSVersionTable.PSVersion) -Encoding UTF8 } catch { $null = $_ }
 }
 
 function Write-PanelLine {
@@ -710,7 +724,7 @@ function Get-Prerequisite {
     @{ Kind = 'soft'; Name = 'Script liegt nicht lokal'; Check = { if ($PSScriptRoot -match '^\\\\|OneDrive|Downloads') { 'besser unter C:\Tools\vpn-share\ ablegen' } else { '' } } }
     @{ Kind = 'info'; Name = 'AD/Netlogon-Server aus Variable gefunden'; Check = { if (Get-AdServerSource) { '' } else { 'weder LOGONSERVER noch USERDNSDOMAIN gesetzt (kein Domain-Client?), VpnTestHost in vpn-share.config.json setzen' } }; Detail = { Get-AdServerSource } }
     @{ Kind = 'soft'; Name = 'Vorherige Anpassungen noch aktiv'; Check = { if (Test-Path $StateFile) { 'bitte -Step Off starten' } else { '' } } }
-    @{ Kind = 'soft'; Name = 'Achtung: VPN auf Client 1 aktiv'; Check = { if ((Test-BarracudaConnected) -or (Find-VpnAdapter)) { 'wird nach dem Start getrennt' } else { '' } } }
+    @{ Kind = 'info'; Name = 'VPN-Verbindung Client 1'; Check = { if ((Test-BarracudaConnected) -or (Find-VpnAdapter)) { 'AN, wird nach dem Start getrennt' } else { '' } }; Detail = { 'AUS' } }
   )
 }
 
@@ -722,7 +736,7 @@ function Show-PrerequisitePanel {
   $results = foreach ($item in (Get-Prerequisite)) {
     if ($Demo) {   # simulated results: VPN still connected (shows the countdown); with -DemoFail the first panel has one failure
       $problem = ''
-      if ($item.Name -eq 'Achtung: VPN auf Client 1 aktiv') { $problem = 'wird nach dem Start getrennt' }
+      if ($item.Name -eq 'VPN-Verbindung Client 1') { $problem = 'AN, wird nach dem Start getrennt' }
       if ($DemoFail -and $script:DemoPanelRuns -eq 1 -and $item.Name -eq 'WLAN hat Internet') { $problem = 'kein Internet (Anmeldeseite?)' }
     }
     else { $problem = try { [string](& $item.Check) } catch { $_.Exception.Message } }
@@ -759,7 +773,7 @@ function Confirm-Prerequisite {
       if ($answer -match '^[nNaA]') { throw 'Abbruch bei: Voraussetzungen' }
       continue
     }
-    Write-Ui ('  ' + [char]0x2714 + ' Alle Kontrollen bestanden') 'DarkGreen'
+    Write-Ui ('  ' + [char]0x2714 + ' Alle Voraussetzungen bestanden') 'DarkGreen'
     $answer = Read-Choice 'Prozess starten?' '[Enter] Start     [R] Kontrolle wiederholen     [N] Abbruch'
     if ($answer -match '^[nNaA]') { throw 'Abbruch bei: Voraussetzungen' }
     if ($answer -match '^[rR]') { continue }
@@ -922,6 +936,7 @@ function Invoke-AutoRun {
 }
 
 function Invoke-Main {
+  Write-ScriptHeader
   if ($Demo) {
     if (-not $VpnProfileName) { $script:VpnProfileName = 'DemoProfil' }
     if (-not $VpnTestHost) { $script:VpnTestHost = 'intern.example.com' }
