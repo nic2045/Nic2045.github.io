@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-  Shares the Barracuda VPN of this client (Client 1) over an Ethernet cable with a second client (Client 2).
+  Shares the VPN of this client (Client 1) over an Ethernet cable with a second client (Client 2).
 
 .DESCRIPTION
-  Client 1 has internet over WLAN and connects the Barracuda VPN. The script shares that VPN
+  Client 1 has internet over WLAN and connects the VPN. The script shares that VPN
   through Windows Internet Connection Sharing (ICS): VPN adapter = source, cable adapter = target
   (192.168.137.1). Client 2 needs no admin rights and no VPN software; it gets a DHCP address.
 
@@ -17,7 +17,7 @@
   Auto = full flow (default); Prep = policies only; Share = ICS only; Off = tear down.
 
 .PARAMETER VpnProfileName
-  Barracuda profile to connect. Empty = the profile whose description contains VpnProfilePattern is used.
+  VPN profile to connect. Empty = the profile whose description contains VpnProfilePattern is used.
 
 .PARAMETER VpnProfilePattern
   Text searched in the profile description when no VpnProfileName is given (default '_Standard'). If several match, the first is used (warning).
@@ -82,20 +82,23 @@
   BIOS (once): disable "Wireless Radio Control" -> "Control WLAN radio", or the WLAN drops when the cable is plugged in.
   When started from memory, log and state file are written to %TEMP%.
 
-  Version: 1.1.1   (x-release-please-version)
+  Version: 1.1.2   (x-release-please-version)
 
   Changelog
+    1.1.2 (2026-10-21)
+      - Help text no longer names the VPN product
+      - Script text is ASCII only (umlauts replaced by other words), so `irm | iex` shows no garbled characters in Windows PowerShell 5.1
     1.1.1 (2026-10-20)
       - Prerequisite panel shows whether the AD/Netlogon server was found from a variable (LOGONSERVER, USERDNSDOMAIN or the configured test host) and which value
       - Windows PowerShell 5.1: umlauts garbled by a charset-less `irm` response are repaired when the script runs as a scriptblock, otherwise a warning names the fix
       - PowerShell 7 relaunch: the temporary copy is written with a BOM, so Windows PowerShell 5.1 reads the umlauts correctly
     1.1.0 (2026-10-20)
       - Test target is optional: a domain controller of the client's own domain is found via DNS SRV (fallback %LOGONSERVER%), TCP port 389
-      - Profile is optional: the Barracuda profile whose description contains VpnProfilePattern (default '_Standard') is used
+      - Profile is optional: the VPN profile whose description contains VpnProfilePattern (default '_Standard') is used
       - Runs without arguments or config on a domain client: irm <url> | iex
     1.0.0 (2026-10-20)
-      - Prerequisite panel (admin, adapters enabled, Barracuda profile, WLAN internet, cable) before anything changes
-      - Automatic VPN disconnect with 3-2-1 countdown; VPN verified via Barracuda status and an optional test target
+      - Prerequisite panel (admin, adapters enabled, VPN profile, WLAN internet, cable) before anything changes
+      - Automatic VPN disconnect with 3-2-1 countdown; VPN verified via the client status and an optional test target
       - Retry/Skip/Abort prompts with long timeouts; Enter-driven choice blocks for every operator input
       - DHCP check for Client 2, summary panel, teardown offer at the end or after an abort (state file)
       - -Demo / -DemoFail simulate the whole flow; -DryRun checks the real system without changes; -DebugInfo for details
@@ -125,8 +128,8 @@ if ($DemoFail) { $Demo = [switch]$true }   # -DemoFail alone must never run for 
 
 #region Encoding self-check
 # Windows PowerShell 5.1 decodes an `irm` response without a charset as ISO-8859-1, so the UTF-8 umlauts arrive as
-# mojibake ('ü' becomes 'Ã¼'). Detect that and run the script again with the text re-decoded as UTF-8.
-if ('ü'.Length -ne 1 -and -not $env:VPNSHARE_ENCODING_FIX) {
+# mojibake (u-umlaut becomes A-tilde plus a quarter sign). Detect that and run the script again with the text re-decoded as UTF-8.
+if (([string][char]0xFC).Length -ne 1 -and -not $env:VPNSHARE_ENCODING_FIX) {
   $selfBlock = $MyInvocation.MyCommand.ScriptBlock
   # only for in-memory scriptblocks that are really this script (with `iex` the block would be the caller's)
   if (-not $PSCommandPath -and $selfBlock -and $selfBlock.ToString().Contains('#region Encoding self-check')) {
@@ -292,7 +295,7 @@ function Find-DomainController {
         Where-Object { $_.Type -eq 'SRV' } | Sort-Object Priority, @{ Expression = 'Weight'; Descending = $true } | Select-Object -First 1
       if ($srv) { return [string]$srv.NameTarget }
     }
-    catch { Write-Verbose "SRV-Lookup für $domain fehlgeschlagen: $($_.Exception.Message)" }
+    catch { Write-Verbose "SRV-Lookup fehlgeschlagen (${domain}): $($_.Exception.Message)" }
   }
   if ($env:LOGONSERVER) { return ($env:LOGONSERVER -replace '^\\\\', '') }
   ''
@@ -301,9 +304,9 @@ function Find-DomainController {
 # Where the AD/Netlogon server comes from: configured test host, %LOGONSERVER% or the DNS domain (DC is looked up after the VPN connect). Empty = not found.
 function Get-AdServerSource {
   if ($VpnTestHost) { return "konfiguriert: $VpnTestHost" }
-  $domain = if ($env:USERDNSDOMAIN) { ", Domäne $($env:USERDNSDOMAIN)" } else { '' }
+  $domain = if ($env:USERDNSDOMAIN) { ", Domain $($env:USERDNSDOMAIN)" } else { '' }
   if ($env:LOGONSERVER) { return "LOGONSERVER=$($env:LOGONSERVER -replace '^\\\\', '')$domain" }
-  if ($env:USERDNSDOMAIN) { return "Domäne $($env:USERDNSDOMAIN), DC per DNS nach dem VPN-Connect" }
+  if ($env:USERDNSDOMAIN) { return "Domain $($env:USERDNSDOMAIN), DC per DNS nach dem VPN-Connect" }
   ''
 }
 
@@ -329,10 +332,10 @@ function Invoke-Gate {
     if ($DemoFail -and -not $script:DemoSeen[$Title]) {
       $script:DemoSeen[$Title] = $true
       Write-Log "FEHLT: $Title -> simulierter Fehler (Demo)" 'Red'
-      $keys = if ($AllowSkip) { '[Enter]/[R] Wiederholen     [S] Überspringen     [A] Abbruch' } else { '[Enter]/[R] Wiederholen     [A] Abbruch' }
-      $answer = Read-Choice 'Bedingung nicht erfüllt - wie weiter?' $keys 'Error'
+      $keys = if ($AllowSkip) { '[Enter]/[R] Wiederholen     [S] Auslassen     [A] Abbruch' } else { '[Enter]/[R] Wiederholen     [A] Abbruch' }
+      $answer = Read-Choice 'Bedingung nicht erreicht - wie weiter?' $keys 'Error'
       if ($answer -match '^[aA]') { throw "Abbruch bei: $Title" }
-      if ($AllowSkip -and $answer -match '^[sS]') { Write-Log "ÜBERSPRUNGEN: $Title"; return }
+      if ($AllowSkip -and $answer -match '^[sS]') { Write-Log "AUSGELASSEN: $Title"; return }
     }
     Start-Sleep -Seconds 1
     Write-Log "[OK] Erledigt: $Title" 'DarkGreen'
@@ -342,8 +345,8 @@ function Invoke-Gate {
     if ($Hint) { Write-Log "[DRYRUN] Hinweis an den Admin im echten Lauf: $Hint" }
     $problem = [string](& $Check)
     if (-not $problem) { Write-Log "[DRYRUN] OK: $Title" }
-    elseif ($AfterChange) { Write-Log "[DRYRUN] erst nach der Änderung erfüllbar: $Title (jetzt: $problem)" }
-    else { Write-Log "[DRYRUN] JETZT NICHT ERFÜLLT: $Title -> $problem (echter Lauf: bis $TimeoutSec s warten, dann Rückfrage)" }
+    elseif ($AfterChange) { Write-Log "[DRYRUN] erst nach der Anpassung erreichbar: $Title (jetzt: $problem)" }
+    else { Write-Log "[DRYRUN] JETZT NICHT ERREICHT: $Title -> $problem (echter Lauf: bis $TimeoutSec s warten, dann Nachfrage)" }
     return
   }
   if ($Hint) { Write-Ui "  -> $Hint" 'Cyan' }
@@ -355,10 +358,10 @@ function Invoke-Gate {
       Start-Sleep -Seconds 2
     } while ((Get-Date) -lt $deadline)
     Write-Log "FEHLT: $Title -> $problem" 'Red'
-    $keys = if ($AllowSkip) { '[Enter]/[R] Wiederholen     [S] Überspringen     [A] Abbruch' } else { '[Enter]/[R] Wiederholen     [A] Abbruch' }
-    $answer = Read-Choice 'Bedingung nicht erfüllt - wie weiter?' $keys 'Error'
+    $keys = if ($AllowSkip) { '[Enter]/[R] Wiederholen     [S] Auslassen     [A] Abbruch' } else { '[Enter]/[R] Wiederholen     [A] Abbruch' }
+    $answer = Read-Choice 'Bedingung nicht erreicht - wie weiter?' $keys 'Error'
     if ($answer -match '^[aA]') { throw "Abbruch bei: $Title" }
-    if ($AllowSkip -and $answer -match '^[sS]') { Write-Log "ÜBERSPRUNGEN: $Title"; return }
+    if ($AllowSkip -and $answer -match '^[sS]') { Write-Log "AUSGELASSEN: $Title"; return }
     if ($Hint) { Write-Ui "  -> $Hint" 'Cyan' }
   }
 }
@@ -370,15 +373,15 @@ function Invoke-Gate {
 function Backup-RegistryKey {
   param([string]$RegPath, [string]$File)
   if (Test-Path $File) { if ($DryRun) { Write-Log "[DRYRUN] Backup existiert schon: $File" }; return }
-  if ($DryRun) { Write-Log "[DRYRUN] würde Backup anlegen: $File"; return }
+  if ($DryRun) { Write-Log "[DRYRUN] geplant: Backup anlegen - $File"; return }
   reg export $RegPath $File /y | Out-Null
 }
 
 function Show-PolicyPlan {
   $nc = Get-RegistryValue $ncKey 'NC_ShowSharedAccessUI'
   $wcm = Get-RegistryValue $wcmKey 'fBlockNonDomain'
-  $ncText = if ($null -eq $nc) { 'nicht gesetzt (nichts zu tun)' } else { "$nc -> würde entfernt" }
-  $wcmText = if ($null -eq $wcm) { 'nicht gesetzt -> würde auf 0 gesetzt' } elseif ($wcm -eq 0) { '0 (nichts zu tun)' } else { "$wcm -> würde auf 0 gesetzt" }
+  $ncText = if ($null -eq $nc) { 'nicht gesetzt (nichts zu tun)' } else { "$nc -> wird entfernt" }
+  $wcmText = if ($null -eq $wcm) { 'nicht gesetzt -> wird auf 0 gesetzt' } elseif ($wcm -eq 0) { '0 (nichts zu tun)' } else { "$wcm -> wird auf 0 gesetzt" }
   Write-Log "[DRYRUN] NC_ShowSharedAccessUI: aktuell $ncText"
   Write-Log "[DRYRUN] fBlockNonDomain: aktuell $wcmText"
 }
@@ -391,12 +394,12 @@ function Disable-PolicyLock {
 }
 
 function Invoke-Prep {
-  if ($Demo) { Write-Log '[DEMO] würde Policies ändern (Backup, NC_ShowSharedAccessUI, fBlockNonDomain) und WlanSvc neu starten'; return }
+  if ($Demo) { Write-Log '[DEMO] geplant: Policies anpassen (Backup, NC_ShowSharedAccessUI, fBlockNonDomain) und WlanSvc neu starten'; return }
   Backup-RegistryKey 'HKLM\Software\Policies\Microsoft\Windows\Network Connections' 'C:\nc-policy-backup.reg'
   Backup-RegistryKey 'HKLM\Software\Policies\Microsoft\Windows\WcmSvc\GroupPolicy' 'C:\wcm-policy-backup.reg'
   Disable-PolicyLock
-  if ($DryRun) { Write-Log '[DRYRUN] würde Dienst WlanSvc neu starten (WLAN stockt dann kurz)'; return }
-  Save-RunState 'Policies geändert'
+  if ($DryRun) { Write-Log '[DRYRUN] geplant: Dienst WlanSvc neu starten (WLAN stockt dann kurz)'; return }
+  Save-RunState 'Policies angepasst'
   Restart-Service WlanSvc -Force   # so the changed policy applies; WLAN stalls briefly
   Write-Log 'Policies angepasst, WLAN-Dienst neu gestartet'
 }
@@ -459,7 +462,7 @@ function Get-LanState {
   if ($lan.Count -eq 1) { return [pscustomobject]@{ Adapter = $lan[0]; Problem = $null } }
   if ($lan.Count -gt 1) { return [pscustomobject]@{ Adapter = $null; Problem = "Mehrere Kabel-Adapter Up ($(($lan.Name) -join ', ')) -> -LanAdapter angeben" } }
   if ($withRoute.Count -gt 0) {
-    return [pscustomobject]@{ Adapter = $null; Problem = "Kabel-Adapter '$($withRoute[0].Name)' hängt in einem Netz mit Internetzugang (Standort-Netz?). Kabel muss direkt zu Client 2" }
+    return [pscustomobject]@{ Adapter = $null; Problem = "Kabel-Adapter '$($withRoute[0].Name)' steckt in einem Netz mit Internetzugang (Standort-Netz?). Kabel muss direkt zu Client 2" }
   }
   [pscustomobject]@{ Adapter = $null; Problem = 'Kein Link am Ethernet-Adapter: Kabel gesteckt, Client 2 eingeschaltet?' }
 }
@@ -478,7 +481,7 @@ function Get-VpnProfileLabel {
 function Restore-Wlan {
   if ($Demo) { return }
   if (-not (Test-InetUp) -and $script:Ssid) {
-    if ($DryRun) { Write-Log "[DRYRUN] WLAN wäre weg: würde neu verbinden mit '$($script:Ssid)'"; return }
+    if ($DryRun) { Write-Log "[DRYRUN] WLAN-Verbindung geht verloren, geplant: neu verbinden mit '$($script:Ssid)'"; return }
     Write-Log "WLAN weg, verbinde neu mit '$($script:Ssid)'"
     netsh wlan connect "name=$($script:Ssid)" | Out-Null
   }
@@ -491,7 +494,7 @@ function Import-BarracudaModule {
   $manifest = Join-Path $env:ProgramFiles 'Barracuda\Network Access Client\Modules\BarracudaNetworkAccessClient\BarracudaNetworkAccessClient.psd1'
   if (-not (Test-Path $manifest)) { throw "Barracuda-Modul nicht gefunden: $manifest" }
   try { Import-Module $manifest -Force -ErrorAction Stop }
-  catch { throw "Barracuda-Modul lässt sich nicht laden: $($_.Exception.Message)" }
+  catch { throw "Barracuda-Modul nicht ladbar: $($_.Exception.Message)" }
 }
 
 # Get-VPNProfile returns a List[VPNProfile]; ForEach-Object { $_ } unrolls it so .ID/.Description/.Context are readable.
@@ -517,7 +520,7 @@ function Get-VpnStatusText {
 
 # Connect-VPN may return before the tunnel is up; a gate waits for the adapter afterwards.
 function Connect-BarracudaVpn {
-  if ($Demo) { Write-Log "[DEMO] würde VPN-Profil '$VpnProfileName' verbinden"; return }
+  if ($Demo) { Write-Log "[DEMO] geplant: VPN-Profil '$VpnProfileName' verbinden"; return }
   Import-BarracudaModule
   if ((Test-BarracudaConnected) -and (Find-VpnAdapter)) { Write-Log 'VPN ist bereits verbunden'; return }
 
@@ -528,7 +531,7 @@ function Connect-BarracudaVpn {
   if ($profiles.Count -gt 1) { Write-Log "WARNUNG: $($profiles.Count) Profile passen auf $(Get-VpnProfileLabel), nehme das erste ($($profiles[0].Description))" }
   $vpnProfile = $profiles[0]
   if ($DryRun) {
-    Write-Log "[DRYRUN] Profil gefunden: '$($vpnProfile.Description)'. Würde das VPN verbinden"
+    Write-Log "[DRYRUN] Profil gefunden: '$($vpnProfile.Description)'. Geplant: VPN verbinden"
     Write-DebugLog "Connect-VPN -ProfileID $($vpnProfile.ID) -ProfileContext $($vpnProfile.Context)"
     $script:VpnConnectPlanned = $true
     return
@@ -551,7 +554,7 @@ function Disconnect-ActiveVpn {
     Write-Log '[OK] Kein VPN aktiv, nichts zu trennen' 'DarkGreen'
     return
   }
-  if ($DryRun) { Write-Log '[DRYRUN] VPN ist verbunden: würde nach Countdown 3-2-1 getrennt'; return }
+  if ($DryRun) { Write-Log '[DRYRUN] VPN ist verbunden: geplant: nach Countdown 3-2-1 trennen'; return }
   Write-Ui '  VPN ist noch verbunden und wird getrennt in:' 'Yellow'
   foreach ($i in 3, 2, 1) { Write-Ui "    $i ..." 'Yellow'; Start-Sleep -Seconds 1 }
   try {
@@ -581,7 +584,7 @@ function Disable-AllIcs {
   if (-not $DryRun) { regsvr32 /s hnetcfg.dll }
   try { $manager = New-Object -ComObject HNetCfg.HNetShare }
   catch {
-    if ($DryRun) { Write-Log "[DRYRUN] ICS-Schnittstelle nicht verfügbar: $($_.Exception.Message)"; return }
+    if ($DryRun) { Write-Log "[DRYRUN] ICS-Schnittstelle nicht vorhanden: $($_.Exception.Message)"; return }
     throw
   }
   foreach ($connection in $manager.EnumEveryConnection) {
@@ -590,7 +593,7 @@ function Disable-AllIcs {
     $config = $manager.INetSharingConfigurationForINetConnection.Invoke($connection)
     try {
       if ($config.SharingEnabled) {
-        if ($DryRun) { Write-Log "[DRYRUN] würde ICS ausschalten: $name" }
+        if ($DryRun) { Write-Log "[DRYRUN] geplant: ICS ausschalten: $name" }
         else { $config.DisableSharing(); Write-Log "ICS aus: $name" }
       }
     }
@@ -641,12 +644,12 @@ function Invoke-Share {
 
   if ($DryRun) {
     foreach ($item in $expected) { Write-Log "[DRYRUN] erwartet: $item" }
-    Write-Log '[DRYRUN] würde die Policies erneut setzen (falls die GPO zwischenzeitlich neu gegriffen hat)'
-    Write-Log '[DRYRUN] würde Dienst SharedAccess auf Manuell stellen und starten'
+    Write-Log '[DRYRUN] geplant: Policies erneut setzen (falls die GPO zwischenzeitlich neu gegriffen hat)'
+    Write-Log '[DRYRUN] geplant: Dienst SharedAccess auf Manuell stellen und starten'
     Disable-AllIcs
     if ($lan -and ($vpn -or $expected.Count -gt 0)) {
       $source = if ($vpn) { $vpn.Name } else { '<Barracuda-Adapter nach Connect>' }
-      Write-Log "[DRYRUN] würde ICS aktivieren: $source (Quelle) -> $($lan.Name) (Ziel, 192.168.137.1)"
+      Write-Log "[DRYRUN] geplant: ICS aktivieren: $source (Quelle) -> $($lan.Name) (Ziel, 192.168.137.1)"
     }
     return
   }
@@ -681,7 +684,7 @@ function Invoke-Share {
 # Kind 'hard' blocks the start, 'soft' is only a warning. Check returns '' (OK) or the problem text.
 function Get-Prerequisite {
   @(
-    @{ Kind = 'hard'; Name = 'Script als Administrator ausgeführt'; Check = { if (Test-Admin) { '' } else { 'PowerShell als Administrator starten' } } }
+    @{ Kind = 'hard'; Name = 'Script als Administrator gestartet'; Check = { if (Test-Admin) { '' } else { 'PowerShell als Administrator starten' } } }
     @{ Kind = 'hard'; Name = 'Windows PowerShell 5.1'; Check = { if ($PSVersionTable.PSEdition -eq 'Desktop') { '' } else { 'PowerShell 7 erkannt' } } }
     @{ Kind = 'hard'; Name = 'WLAN-Adapter vorhanden'; Check = { $a = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.PhysicalMediaType -match '802\.11' }); if ($a.Count -eq 0) { 'kein WLAN-Adapter gefunden' } elseif (-not ($a | Where-Object { $_.Status -ne 'Disabled' })) { "'$($a[0].Name)' ist deaktiviert" } else { '' } } }
     @{ Kind = 'hard'; Name = 'Ethernet-Adapter vorhanden'; Check = { $a = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.PhysicalMediaType -notmatch '802\.11|Bluetooth' -and $_.InterfaceDescription -notmatch $VpnPattern }); if ($a.Count -eq 0) { 'kein Ethernet-Adapter gefunden (USB-Adapter gesteckt?)' } elseif (-not ($a | Where-Object { $_.Status -ne 'Disabled' })) { "'$($a[0].Name)' ist deaktiviert" } else { '' } } }
@@ -705,8 +708,8 @@ function Get-Prerequisite {
       }
     }
     @{ Kind = 'soft'; Name = 'Script liegt nicht lokal'; Check = { if ($PSScriptRoot -match '^\\\\|OneDrive|Downloads') { 'besser unter C:\Tools\vpn-share\ ablegen' } else { '' } } }
-    @{ Kind = 'info'; Name = 'AD/Netlogon-Server aus Variable gefunden'; Check = { if (Get-AdServerSource) { '' } else { 'weder LOGONSERVER noch USERDNSDOMAIN gesetzt (kein Domänen-Client?), VpnTestHost in vpn-share.config.json setzen' } }; Detail = { Get-AdServerSource } }
-    @{ Kind = 'soft'; Name = 'Frühere Änderungen noch aktiv'; Check = { if (Test-Path $StateFile) { 'bitte -Step Off ausführen' } else { '' } } }
+    @{ Kind = 'info'; Name = 'AD/Netlogon-Server aus Variable gefunden'; Check = { if (Get-AdServerSource) { '' } else { 'weder LOGONSERVER noch USERDNSDOMAIN gesetzt (kein Domain-Client?), VpnTestHost in vpn-share.config.json setzen' } }; Detail = { Get-AdServerSource } }
+    @{ Kind = 'soft'; Name = 'Vorherige Anpassungen noch aktiv'; Check = { if (Test-Path $StateFile) { 'bitte -Step Off starten' } else { '' } } }
     @{ Kind = 'soft'; Name = 'Achtung: VPN auf Client 1 aktiv'; Check = { if ((Test-BarracudaConnected) -or (Find-VpnAdapter)) { 'wird nach dem Start getrennt' } else { '' } } }
   )
 }
@@ -724,7 +727,7 @@ function Show-PrerequisitePanel {
     }
     else { $problem = try { [string](& $item.Check) } catch { $_.Exception.Message } }
     $detail = ''
-    if (-not $problem -and $item.Detail) { $detail = if ($Demo) { 'LOGONSERVER=DC01, Domäne contoso.com (Demo)' } else { try { [string](& $item.Detail) } catch { '' } } }
+    if (-not $problem -and $item.Detail) { $detail = if ($Demo) { 'LOGONSERVER=DC01, Domain contoso.com (Demo)' } else { try { [string](& $item.Detail) } catch { '' } } }
     [pscustomobject]@{ Kind = $item.Kind; Name = $item.Name; Problem = $problem; Detail = $detail }
   }
   Write-PanelBorder 'top' 'Voraussetzungen Client 1'
@@ -734,12 +737,12 @@ function Show-PrerequisitePanel {
     }
     elseif ($result.Kind -in 'soft', 'info') { Write-PanelLine "[!] $($result.Name) - $($result.Problem)" 'Yellow' }
     else { Write-PanelLine "[$failMark] $($result.Name) - $($result.Problem)" 'Red' }
-    if ($result.Problem) { try { Add-Content -Path $LogFile -Value ('{0:yyyy-MM-dd HH:mm:ss}  PRÜFUNG {1}: {2}' -f (Get-Date), $result.Name, $result.Problem) -Encoding UTF8 } catch { $null = $_ } }
+    if ($result.Problem) { try { Add-Content -Path $LogFile -Value ('{0:yyyy-MM-dd HH:mm:ss}  KONTROLLE {1}: {2}' -f (Get-Date), $result.Name, $result.Problem) -Encoding UTF8 } catch { $null = $_ } }
   }
-  Write-PanelBorder 'mid' 'Vom Admin zu bestätigen'
+  Write-PanelBorder 'mid' 'Vom Admin abzuhaken'
   Write-PanelLine '-> Client 2 ist eingeschaltet, hochgefahren und einsatzbereit' 'Cyan'
   Write-PanelLine '-> WLAN an Client 2 ist getrennt/ausgeschaltet' 'Cyan'
-  Write-PanelLine '-> Patchkabel liegt bereit (später direkt Client 1 <-> Client 2)' 'Cyan'
+  Write-PanelLine '-> Patchkabel liegt bereit (danach direkt Client 1 <-> Client 2)' 'Cyan'
   Write-PanelLine '-> BIOS Client 1: Wireless Radio Control -> Control WLAN radio aus' 'Cyan'
   Write-PanelBorder 'bottom'
   @($results | Where-Object { $_.Problem -and $_.Kind -eq 'hard' }).Count
@@ -751,38 +754,38 @@ function Confirm-Prerequisite {
     $failures = Show-PrerequisitePanel
     if ($DryRun) { Disconnect-ActiveVpn; return }
     if ($failures -gt 0) {
-      Write-Ui ('  ' + [char]0x2718 + " $failures Voraussetzung(en) nicht erfüllt") 'Red'
-      $answer = Read-Choice 'Ursache beheben, dann Prüfung wiederholen' '[Enter]/[R] Prüfung wiederholen     [N] Abbruch' 'Error'
+      Write-Ui ('  ' + [char]0x2718 + " $failures Voraussetzung(en) nicht erreicht") 'Red'
+      $answer = Read-Choice 'Ursache beheben, dann Kontrolle wiederholen' '[Enter]/[R] Kontrolle wiederholen     [N] Abbruch' 'Error'
       if ($answer -match '^[nNaA]') { throw 'Abbruch bei: Voraussetzungen' }
       continue
     }
-    Write-Ui ('  ' + [char]0x2714 + ' Alle Prüfungen bestanden') 'DarkGreen'
-    $answer = Read-Choice 'Prozess starten?' '[Enter] Start     [R] Prüfung wiederholen     [N] Abbruch'
+    Write-Ui ('  ' + [char]0x2714 + ' Alle Kontrollen bestanden') 'DarkGreen'
+    $answer = Read-Choice 'Prozess starten?' '[Enter] Start     [R] Kontrolle wiederholen     [N] Abbruch'
     if ($answer -match '^[nNaA]') { throw 'Abbruch bei: Voraussetzungen' }
     if ($answer -match '^[rR]') { continue }
     break
   }
-  Write-Log '[OK] Voraussetzungen bestätigt, Start' 'DarkGreen'
+  Write-Log '[OK] Voraussetzungen abgehakt, Start' 'DarkGreen'
   Disconnect-ActiveVpn
 }
 #endregion
 
 #region Teardown and diagnostics
 function Invoke-Off {
-  if ($Demo) { Write-Log '[DEMO] würde ICS ausschalten, VPN trennen und gpupdate /force ausführen'; return }
+  if ($Demo) { Write-Log '[DEMO] geplant: ICS ausschalten, VPN trennen und gpupdate /force starten'; return }
   Disable-AllIcs
   if (-not $KeepVpn) {
     try {
       Import-BarracudaModule
       if (Test-BarracudaConnected) {
-        if ($DryRun) { Write-Log '[DRYRUN] würde VPN trennen (Disconnect-VPN)' }
+        if ($DryRun) { Write-Log '[DRYRUN] geplant: VPN trennen (Disconnect-VPN)' }
         else { Disconnect-VPN -ErrorAction Stop; Start-Sleep -Seconds 3; Write-Log 'VPN getrennt' }
       }
       else { Write-Log 'VPN war nicht verbunden' }
     }
     catch { Write-Log "VPN-Trennung fehlgeschlagen: $($_.Exception.Message)" }
   }
-  if ($DryRun) { Write-Log '[DRYRUN] würde gpupdate /force ausführen (holt die Original-Policies zurück)' }
+  if ($DryRun) { Write-Log '[DRYRUN] geplant: gpupdate /force starten (stellt die Original-Policies wieder her)' }
   else {
     gpupdate /force | Out-Null   # the GPO restores the original policies
     Remove-RunState
@@ -827,7 +830,7 @@ function Invoke-AutoRun {
   Invoke-Safe { Invoke-Prep }
 
   # Phase 2: internet over WLAN
-  Write-Log '=== 2/6 Internet über WLAN ==='
+  Write-Log '=== 2/6 Internet per WLAN ==='
   Invoke-Gate -Title 'WLAN verbunden (mit Internetverbindung)' -TimeoutSec 120 `
     -Hint 'WLAN verbinden, falls es sich nicht selbst verbindet' `
     -Check { if (Find-InternetAdapter) { '' } else { 'WLAN nicht verbunden bzw. ohne Internetverbindung' } }
@@ -845,7 +848,7 @@ function Invoke-AutoRun {
     -Check { [string](Get-LanState (Get-InetIndex)).Problem }
   Restore-Wlan
   Invoke-Gate -Title 'WLAN nach Kabel weiter verbunden' -TimeoutSec 90 `
-    -Hint "Fällt WLAN beim Kabelstecken aus: BIOS 'Wireless Radio Control' prüfen" `
+    -Hint "Bei WLAN-Ausfall beim Kabelstecken: BIOS 'Wireless Radio Control' kontrollieren" `
     -Check { if (Test-InetUp) { '' } else { 'WLAN weg' } }
 
   # Phase 4: VPN (admin: nothing to do, tunnel needs up to 180 s)
@@ -856,10 +859,10 @@ function Invoke-AutoRun {
     -Check { if (Find-VpnAdapter) { '' } else { "VPN-Adapter nicht Up. Status: $(Get-VpnStatusText)" } }
   Restore-Wlan   # the GPO (fBlockNonDomain) may drop the WLAN after the VPN connects
   Invoke-Gate -Title 'WLAN nach VPN-Connect weiter verbunden' -TimeoutSec 90 `
-    -Hint 'Fällt WLAN hier aus: Policy fBlockNonDomain greift wieder, Script erneut starten' `
+    -Hint 'Bei WLAN-Ausfall hier: Policy fBlockNonDomain greift wieder, Script erneut starten' `
     -Check { if (Test-InetUp) { '' } else { 'WLAN weg, Tunnel bricht ab' } }
   Invoke-Gate -Title 'Barracuda meldet: VPN verbunden' -TimeoutSec 120 -AfterChange `
-    -Hint 'Prüft den Verbindungsstatus des Barracuda-Clients' `
+    -Hint 'Kontrolliert den Verbindungsstatus des Barracuda-Clients' `
     -Check { if (Test-BarracudaConnected) { '' } else { "Status: $(Get-VpnState)" } }
   if (-not $VpnTestHost) {
     $dc = Find-DomainController
@@ -870,16 +873,16 @@ function Invoke-AutoRun {
     }
   }
   if ($VpnTestHost) {
-    Invoke-Gate -Title "VPN-Testziel auflösbar ($VpnTestHost)" -AllowSkip -AfterChange `
-      -Hint 'Prüft, ob das VPN auf Client 1 wirklich funktioniert' `
-      -Check { try { Resolve-DnsName $VpnTestHost -ErrorAction Stop | Out-Null; '' } catch { 'DNS-Auflösung scheitert' } }
+    Invoke-Gate -Title "VPN-Testziel per DNS gefunden ($VpnTestHost)" -AllowSkip -AfterChange `
+      -Hint 'Kontrolliert, ob das VPN auf Client 1 wirklich funktioniert' `
+      -Check { try { Resolve-DnsName $VpnTestHost -ErrorAction Stop | Out-Null; '' } catch { 'DNS-Abfrage scheitert' } }
     if ($VpnTestPort) {
       Invoke-Gate -Title "VPN-Testziel erreichbar (${VpnTestHost}:$VpnTestPort)" -AllowSkip -AfterChange `
-        -Hint 'Prüft die Verbindung durch den Tunnel (TCP)' `
+        -Hint 'Kontrolliert die Verbindung durch den Tunnel (TCP)' `
         -Check { if (Test-TcpPort $VpnTestHost $VpnTestPort 5000) { '' } else { 'keine Verbindung durch den Tunnel' } }
     }
   }
-  else { Write-Log 'Achtung: Kein VpnTestHost konfiguriert, der Funktionstest des VPN entfällt' 'Yellow' }
+  else { Write-Log 'Achtung: Kein VpnTestHost konfiguriert, der Funktionstest des VPN wird ausgelassen' 'Yellow' }
 
   # Phase 5: enable ICS
   Write-Log '=== 5/6 Weitergabe (ICS) ==='
@@ -911,22 +914,22 @@ function Invoke-AutoRun {
   Write-Log "Log: $LogFile"
   if ($VpnTestHost) { Write-Log "Test an Client 2: ping $VpnTestHost" }
   else { Write-Log 'Test an Client 2: Internet bzw. interne Ressource aufrufen' }
-  Write-Log '[OK] Weitergabe läuft' 'DarkGreen'
+  Write-Log '[OK] Weitergabe aktiv' 'DarkGreen'
 
-  $answer = Read-Choice 'Rückbau (-Step Off) jetzt ausführen?' '[Enter] Ja, zurückbauen     [N] Später (erst nach dem Test an Client 2)'
+  $answer = Read-Choice 'Abbau (-Step Off) jetzt starten?' '[Enter] Ja, abbauen     [N] Nachher (erst nach dem Test an Client 2)'
   if ($answer -notmatch '^[nN]') { Invoke-Off }
-  else { Write-Log 'Rückbau später mit: vpn-share.ps1 -Step Off' }
+  else { Write-Log 'Abbau nachher mit: vpn-share.ps1 -Step Off' }
 }
 
 function Invoke-Main {
   if ($Demo) {
     if (-not $VpnProfileName) { $script:VpnProfileName = 'DemoProfil' }
     if (-not $VpnTestHost) { $script:VpnTestHost = 'intern.example.com' }
-    Write-Log "===== DEMO: Ablauf wird nur SIMULIERT, es wird nichts geändert (Log: $LogFile) ====="
+    Write-Log "===== DEMO: Ablauf wird nur SIMULIERT, es wird nichts umgestellt (Log: $LogFile) ====="
   }
-  elseif (-not (Test-Admin)) { throw 'Nicht als Administrator gestartet. PowerShell als Administrator öffnen und erneut starten' }
+  elseif (-not (Test-Admin)) { throw 'Nicht als Administrator gestartet. PowerShell mit Administrator-Rechten starten und das Script erneut starten' }
   if ($DryRun) {
-    Write-Log "===== TROCKENLAUF: Es wird NICHTS am System geändert (Log: $LogFile) ====="
+    Write-Log "===== TROCKENLAUF: Am System wird NICHTS umgestellt (Log: $LogFile) ====="
     if ($DebugInfo) { Show-Diagnostic }
   }
   switch ($Step) {
@@ -935,8 +938,8 @@ function Invoke-Main {
     'Off' { Invoke-Off }
     'Auto' { Invoke-AutoRun }
   }
-  if ($Demo) { Write-Log '===== DEMO ENDE: Es wurde nichts geändert =====' }
-  if ($DryRun) { Write-Log '===== TROCKENLAUF ENDE: Es wurde NICHTS geändert. [DRYRUN]-Zeilen zeigen, was im echten Lauf passiert =====' }
+  if ($Demo) { Write-Log '===== DEMO ENDE: Es wurde nichts umgestellt =====' }
+  if ($DryRun) { Write-Log '===== TROCKENLAUF ENDE: Es wurde NICHTS umgestellt. [DRYRUN]-Zeilen zeigen, was im echten Lauf passiert =====' }
 }
 
 try { Invoke-Main }
@@ -944,11 +947,11 @@ catch {
   # Every error (including "abort" via A) lands here; cleanup is offered, not forced, so the admin can inspect first.
   Write-Log "ABBRUCH: $($_.Exception.Message)" 'Red'
   if ($Step -ne 'Off' -and -not $DryRun -and -not $Demo -and (Test-Path $StateFile)) {
-    $answer = Read-Choice 'Änderungen sind noch aktiv - jetzt zurückbauen (-Step Off)?' '[Enter] Ja, zurückbauen     [N] Später' 'Error'
-    if ($answer -notmatch '^[nN]') { try { Invoke-Off } catch { Write-Log "Rückbau fehlgeschlagen: $($_.Exception.Message)" } }
-    else { Write-Log 'Aufräumen später mit: -Step Off' }
+    $answer = Read-Choice 'Anpassungen sind noch aktiv - jetzt abbauen (-Step Off)?' '[Enter] Ja, abbauen     [N] Nachher' 'Error'
+    if ($answer -notmatch '^[nN]') { try { Invoke-Off } catch { Write-Log "Abbau fehlgeschlagen: $($_.Exception.Message)" } }
+    else { Write-Log 'Bereinigung nachher mit: -Step Off' }
   }
-  elseif ($Step -eq 'Off') { Write-Log 'Rückbau unvollständig: -Step Off erneut ausführen' }
+  elseif ($Step -eq 'Off') { Write-Log 'Abbau bleibt offen: -Step Off erneut starten' }
   if ($PSCommandPath) { exit 1 } else { return }   # exit would close the console when started from memory
 }
 #endregion

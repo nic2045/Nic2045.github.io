@@ -37,6 +37,6 @@ Update: `Update-PSResource NDTools`
 
 | Command | Alias | Description |
 |---|---|---|
-| `Start-NDVpnShare` | `vpn-share` | Shares the Barracuda VPN of this client (Client 1) over an Ethernet cable with a second client (Client 2). |
+| `Start-NDVpnShare` | `vpn-share` | Shares the VPN of this client (Client 1) over an Ethernet cable with a second client (Client 2). |
 
 Generated from the module on every publish. Only exact names work with `Find-PSResource` on this static feed (no wildcard search).
