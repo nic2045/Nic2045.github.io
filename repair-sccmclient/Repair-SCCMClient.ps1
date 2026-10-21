@@ -21,7 +21,7 @@
     Inspired by the repair steps listed in https://github.com/bijudevops/SCCMagentRepair
     (own implementation, no code taken from it).
 
-    Version: 1.0.0   (x-release-please-version)
+    Version: 1.1.0   (x-release-please-version)
 
     Changelog
       1.0.0
