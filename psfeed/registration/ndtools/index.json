@@ -1,0 +1,38 @@
+{
+  "count": 1,
+  "items": [
+    {
+      "@id": "https://nic2045.github.io/psfeed/registration/ndtools/index.json#page",
+      "count": 1,
+      "lower": "1.1.0",
+      "upper": "1.1.0",
+      "items": [
+        {
+          "@id": "https://nic2045.github.io/psfeed/registration/ndtools/1.1.0.json",
+          "catalogEntry": {
+            "@id": "https://nic2045.github.io/psfeed/registration/ndtools/1.1.0.json",
+            "id": "NDTools",
+            "version": "1.1.0",
+            "authors": "nic2045",
+            "description": "PowerShell module for Microsoft 365 administration (EntraID, Exchange Online, Intune, Teams)",
+            "tags": [
+              "PSModule",
+              "Microsoft365",
+              "EntraID",
+              "ExchangeOnline",
+              "Intune",
+              "MSP"
+            ],
+            "copyright": "",
+            "projectUrl": "",
+            "releaseNotes": "",
+            "isPrerelease": false,
+            "listed": true,
+            "packageContent": "https://nic2045.github.io/psfeed/flat/ndtools/1.1.0/ndtools.1.1.0.nupkg"
+          },
+          "packageContent": "https://nic2045.github.io/psfeed/flat/ndtools/1.1.0/ndtools.1.1.0.nupkg"
+        }
+      ]
+    }
+  ]
+}
