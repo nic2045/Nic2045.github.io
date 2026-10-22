@@ -3,9 +3,9 @@
   "items": [
     {
       "@id": "https://nic2045.github.io/psfeed/registration/vpn-share/index.json#page",
-      "count": 4,
+      "count": 5,
       "lower": "1.1.1",
-      "upper": "1.2.1",
+      "upper": "1.3.0",
       "items": [
         {
           "@id": "https://nic2045.github.io/psfeed/registration/vpn-share/1.1.1.json",
@@ -94,6 +94,28 @@
             "packageContent": "https://nic2045.github.io/psfeed/flat/vpn-share/1.2.1/vpn-share.1.2.1.nupkg"
           },
           "packageContent": "https://nic2045.github.io/psfeed/flat/vpn-share/1.2.1/vpn-share.1.2.1.nupkg"
+        },
+        {
+          "@id": "https://nic2045.github.io/psfeed/registration/vpn-share/1.3.0.json",
+          "catalogEntry": {
+            "@id": "https://nic2045.github.io/psfeed/registration/vpn-share/1.3.0.json",
+            "id": "vpn-share",
+            "version": "1.3.0",
+            "authors": "nic2045",
+            "description": "Client 1 has internet over WLAN and connects the VPN. The script shares that VPN\n  through Windows Internet Connection Sharing (ICS): VPN adapter = source, cable adapter = target\n  (192.168.137.1). Client 2 needs no admin rights and no VPN software; it gets a DHCP address.\n      Internet --WLAN--> [ Client 1 + VPN ] --cable--> [ Client 2 ]\n  Flow (Step Auto): prerequisite panel, then 6 phases: policies, WLAN, cable, VPN, ICS, summary.\n  Each phase waits for its condition; on timeout it asks [R]etry / [S]kip (soft checks only) / [A]bort.\n  Cyan \"->\" lines tell the admin what to do (colors: default = info, dark green = done, cyan = to-do, yellow = warning, red = error). Everything is logged to vpn-share.log.",
+            "tags": [
+              "PSScript",
+              "network",
+              "vpn"
+            ],
+            "copyright": "",
+            "projectUrl": "",
+            "releaseNotes": "",
+            "isPrerelease": false,
+            "listed": true,
+            "packageContent": "https://nic2045.github.io/psfeed/flat/vpn-share/1.3.0/vpn-share.1.3.0.nupkg"
+          },
+          "packageContent": "https://nic2045.github.io/psfeed/flat/vpn-share/1.3.0/vpn-share.1.3.0.nupkg"
         }
       ]
     }

@@ -82,7 +82,7 @@
   BIOS (once): disable "Wireless Radio Control" -> "Control WLAN radio", or the WLAN drops when the cable is plugged in.
   When started from memory, log and state file are written to %TEMP%.
 
-  Version: 1.2.1   (x-release-please-version)
+  Version: 1.3.0   (x-release-please-version)
 
   Changelog
     1.2.1 (2026-10-21)
@@ -171,7 +171,7 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
 #endregion
 
 #region Configuration
-$script:ScriptVersion = '1.2.1'   # x-release-please-version (shown in the start header and the log)
+$script:ScriptVersion = '1.3.0'   # x-release-please-version (shown in the start header and the log)
 $cfgFile = $null
 foreach ($dir in @($PSScriptRoot, 'C:\Tools\vpn-share')) {
   if ($dir -and -not $cfgFile -and (Test-Path (Join-Path $dir 'vpn-share.config.json'))) {
